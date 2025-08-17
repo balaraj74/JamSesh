@@ -100,7 +100,7 @@ async function handleSignalingMessage(event) {
         console.log(`I am ${clientId}.`);
         ws.send(JSON.stringify({
             type: 'roomcode',
-            code: jamCode,
+            code: roomCode,
             from: clientId
         }));
         return;
