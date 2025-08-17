@@ -2,6 +2,7 @@ const ws = new WebSocket('wss://jamsesh-8wui.onrender.com')
 
 let clientId = null;
 let roomCode = null;
+let validity = false;
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -46,6 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (jamCodeInput) {
         jamCodeInput.addEventListener('input', () => {
             const jamCode = jamCodeInput.value;
+
+            if (jamCode.length === 6) {
+                enterRoomJoinBtn.style.display = 'inline-block';
+            }
             ws = new WebSocket("wss://jamsesh-8wui.onrender.com");
             ws.onopen = () => {
                 console.log("Websocket connected");
@@ -63,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (data.type === 'validation') {
                     if (data.status === 'valid') {
-                        enterRoomJoinBtn.style.display = 'inline-block';
+                        validity = true;
                     }
                 }
                 else {
@@ -76,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (enterRoomJoinBtn) {
         enterRoomJoinBtn.addEventListener('click', () => {
-            if (jamCode !== null) {
+            if (jamCode !== null && validity === true) {
                 window.location.href = `page2.html?role=join&code=${jamCode}`;
             }
             else {
