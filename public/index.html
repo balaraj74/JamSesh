@@ -57,22 +57,24 @@
     }
 
     button {
-      padding: 20px 40px;
-      font-size: 28px;
-      font-family: 'Caveat', cursive;
-      border: none;
-      border-radius: 10px;
-      background-color: #0F52BA;
-      color: white;
-      cursor: pointer;
-      transition: background-color 0.3s, transform 0.2s;
-    }
+  padding: 20px 40px;
+  font-size: 28px;
+  font-family: 'Caveat', cursive;
+  border: none;
+  border-radius: 10px;
+  background-color: #0F52BA;
+  color: white;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  will-change: transform, box-shadow;
+}
 
-    button:hover {
-       background-color: #0c47a1;
-       transform: scale(1.03);
-       box-shadow: 0 0 6px #00cccc, 0 0 12px #00cccc;
-    }
+button:hover {
+  background-color: #0c47a1;
+  transform: scale(1.01);
+  box-shadow: 0 0 6px #00cccc, 0 0 12px #00cccc;
+}
+
     
   </style>
   <script src="js/navigation.js" defer></script>
