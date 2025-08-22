@@ -6,6 +6,7 @@ let validity = false;
 
 document.addEventListener('DOMContentLoaded', () => {
 
+    // index.html
     const hostBtn = document.getElementById('hostBtn');
     if (hostBtn) {
         hostBtn.addEventListener('click', () => {
@@ -13,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // index.html
     const joinBtn = document.getElementById('joinBtn');
     if (joinBtn) {
         joinBtn.addEventListener('click', () => {
@@ -20,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // host.html
     const generateCodeBtn = document.getElementById('generateCodeBtn');
     if(generateCodeBtn) {
         generateCodeBtn.addEventListener('click', () => {
@@ -30,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // host.html
     const enterRoomHostBtn = document.getElementById('enterRoomHostBtn');
     if(enterRoomHostBtn) {
         enterRoomHostBtn.addEventListener('click', () => {
@@ -42,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // join.html
     const jamCodeInput = document.getElementById('jamCode');
     const enterRoomJoinBtn = document.getElementById('enterRoomJoinBtn');
     if (jamCodeInput) {
@@ -79,6 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // join.html
     if (enterRoomJoinBtn) {
         enterRoomJoinBtn.addEventListener('click', () => {
             if (jamCode !== null && validity === true) {
