@@ -1,4 +1,4 @@
-let ws; 
+let ws;
 let clientId = null;
 const peerConnections = {};
 let localStream;
