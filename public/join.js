@@ -17,7 +17,7 @@ const startBtn = document.getElementById('startBtn');
 const endBtn = document.getElementById('endBtn');
 
 const init = () => {
-    ws = new WebSocket("wss://jamsesh-8wui.onrender.com");
+    ws = new WebSocket("ws://localhost:8080");// replace wss://jamsesh-8wui.onrender.com
     ws.onopen = () => {
         console.log("Websocket connected");
     };

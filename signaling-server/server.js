@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
+const { v4: uuidv4 } = require('uuid');
 
 const path = require('path');
 const dotenv = require('dotenv');
@@ -9,10 +10,21 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server }); 
 const clients = new Map();
+const activeRooms = new Map();
+
 
 dotenv.config();
 
 let masterClientId = null;
+
+function generateUniqueCode() {
+    let newCode;
+    do {
+        newCode = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+    } while (activeRooms.has(newCode)); // Keep generating until it's unique
+    return newCode;
+}
+
 
 app.use(express.static(path.join(__dirname, '../public')));
 
@@ -73,7 +85,55 @@ wss.on('connection', function connection(ws) {    // Registering event handler (
         const messageString = message.toString();
         const data = JSON.parse(messageString);
 
-        if (data.to && clients.has(data.to)) {
+        if (data.type === 'create_room') {
+            const newCode = generateUniqueCode();
+            activeRooms.set(newCode, { hostId: clientId, clients: [clientId] });
+            console.log(`Room ${newCode} created by ${clientId}. Active rooms:`, [...activeRooms.keys()]);
+
+            // Send the new code back to the client who asked for it
+            ws.send(JSON.stringify({
+                type: 'room_created',
+                code: newCode
+            }));
+        }
+
+        else if (data.type === 'validation') {
+            const code = data.code;
+            let response;
+
+            if (activeRooms.has(code)) {
+                response = { type: 'validation', status: 'valid' };
+            } else {
+                response = { type: 'validation', status: 'invalid' };
+            }
+
+            console.log(`Sending validation response to ${clientId}:`, response);
+            ws.send(JSON.stringify(response));
+        } else if (data.type === 'joinroom') {
+            const { code, from } = data;
+            if (activeRooms.has(code)) {
+                const room = activeRooms.get(code);
+                // Add the client to the room
+                room.clients.push(from);
+                console.log(`[Server] Client ${from} joined room ${code}. Room now has ${room.clients.length} members.`);
+
+                // Send a success message back to the client
+                ws.send(JSON.stringify({
+                    type: 'join_success',
+                    code: code,
+                    // You can optionally send the list of clients already in the room
+                    clients: room.clients 
+                }));
+
+            } else {
+                // If the room code is invalid, send a failure message
+                console.log(`[Server] Client ${from} failed to join non-existent room ${code}.`);
+                ws.send(JSON.stringify({
+                    type: 'join_fail',
+                    reason: `Room ${code} not found.`
+                }));
+            }
+        } else if (data.to && clients.has(data.to)) {
             const targetClient = clients.get(data.to);
             if (targetClient && targetClient.readyState === WebSocket.OPEN) {
                 // Add 'from' field so the receiver knows who sent it
@@ -85,8 +145,8 @@ wss.on('connection', function connection(ws) {    // Registering event handler (
                 console.warn(`[Server] Target client ${data.to} is not available.`);
             }
         } 
-        else{
-                        switch (data.type) {
+        else {
+                switch (data.type) {
                 case 'set-master':
                     masterClientId = ws.clientId;
                     console.log(`[Server] Master set to ${masterClientId}`);

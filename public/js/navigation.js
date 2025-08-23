@@ -1,10 +1,40 @@
-const ws = new WebSocket('wss://jamsesh-8wui.onrender.com')
-
-let clientId = null;
-let roomCode = null;
-let validity = false;
 
 document.addEventListener('DOMContentLoaded', () => {
+    let clientId = null;
+    let roomCode = null;
+    let validity = false;
+    
+    console.log(`Attempting to join room: ${roomCode}`);
+
+    const ws = new WebSocket("ws://localhost:8080"); //replace wss://jamsesh-8wui.onrender.com 
+        ws.onopen = () => {
+            console.log("Websocket connected");
+        };
+        ws.onmessage = (message) => {
+            const data = JSON.parse(message.data);
+
+            if (data.type === 'init') {
+                clientId = data.clientId;
+                console.log(`Connected to server. My client ID is: ${clientId}`);
+            }
+
+            if (data.type === 'room_created') {
+                roomCode = data.code; 
+                console.log(`Server created room with code: ${roomCode}`);
+                document.getElementById('jamCodeDisplay').textContent = `Your Jam Code: ${roomCode}`;
+                document.getElementById('enterRoomHostBtn').style.display = 'inline-block';
+            }
+            if (data.type === 'validation') {
+                if (data.status === 'valid') {
+                    console.log("Room code is valid!");
+                    validity = true;
+                    document.getElementById('enterRoomJoinBtn').style.display = 'inline-block';
+                } else {
+                    validity = false;
+                    alert("That room code is not valid.");
+                    }
+            }
+        };
 
     const hostBtn = document.getElementById('hostBtn');
     if (hostBtn) {
@@ -21,12 +51,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const generateCodeBtn = document.getElementById('generateCodeBtn');
-    if(generateCodeBtn) {
+    if (generateCodeBtn) {
         generateCodeBtn.addEventListener('click', () => {
-            roomCode = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-            document.getElementById('jamCodeDisplay').textContent = `Your Jam Code: ${roomCode}`;
-            document.getElementById('enterRoomHostBtn').style.display = 'inline-block';
-            console.log(roomCode);
+            ws.send(JSON.stringify({ type: 'create_room' }));
         });
     }
 
@@ -36,52 +63,32 @@ document.addEventListener('DOMContentLoaded', () => {
             if (roomCode !== null) {
                 window.location.href = `page2.html?role=host&code=${roomCode}`;
             }
-            else {
-                alert("Please generate a jam code first.")
-            }
         });
     }
 
     const jamCodeInput = document.getElementById('jamCode');
-    const enterRoomJoinBtn = document.getElementById('enterRoomJoinBtn');
     if (jamCodeInput) {
         jamCodeInput.addEventListener('input', () => {
             const jamCode = jamCodeInput.value;
-
             if (jamCode.length === 6) {
-                enterRoomJoinBtn.style.display = 'inline-block';
+                ws.send(JSON.stringify({
+                    type: 'validation',
+                    code: jamCode
+                }));
+            } else {
+                // Reset validity if user changes the code
+                validity = false;
+                document.getElementById('enterRoomJoinBtn').style.display = 'none';
             }
-            ws = new WebSocket("wss://jamsesh-8wui.onrender.com");
-            ws.onopen = () => {
-                console.log("Websocket connected");
-            };
-            ws.onmessage = () => {
-                if (data.type === 'init') {
-                    clientId = data.clientId;
-                    console.log(`I am ${clientId}. Existing clients:`, allClientIds);
-                    ws.send(JSON.stringify({
-                        type: 'validation',
-                        code: jamCode,
-                        from: clientId
-                    }));
-                    return;
-                }
-                if (data.type === 'validation') {
-                    if (data.status === 'valid') {
-                        validity = true;
-                    }
-                }
-                else {
-                    alert("Please enter a valid jam code.");
-                    enterRoomJoinBtn.style.display = 'none';
-                }
-            }
+
         });
     }
 
+    const enterRoomJoinBtn = document.getElementById('enterRoomJoinBtn');
     if (enterRoomJoinBtn) {
         enterRoomJoinBtn.addEventListener('click', () => {
-            if (jamCode !== null && validity === true) {
+            if (validity === true) {
+                const jamCode = jamCodeInput.value;
                 window.location.href = `page2.html?role=join&code=${jamCode}`;
             }
             else {
