@@ -2,6 +2,7 @@ let ws;
 let clientId = null;
 const peerConnections = {};
 let isCallInProgress = false;
+let startCall = false;
 const iceServers = [];
 
 const BITRATE_LEVELS = {
@@ -15,6 +16,8 @@ const ADAPTATION_INTERVAL_MS = 5000; // check network every 5 seconds
 const remoteAudio = document.getElementById('remoteAudio');
 const startBtn = document.getElementById('startBtn');
 const endBtn = document.getElementById('endBtn');
+
+startBtn.disabled = true;
 
 const init = () => {
     ws = new WebSocket("wss://jamsesh-8wui.onrender.com");
@@ -79,46 +82,17 @@ async function handleSignalingMessage(event) {
     console.log("received signal:", data.type);
 
     switch (data.type) {
+        case 'start-call': {
+            startCall = true;
+            startBtn.disabled = false;
+            return;
+        }
         case 'set-master': {
             // The server sends this to everyone except the master
             if (data.masterId !== clientId) {
                 console.log(`Master has been set to: ${data.masterId}. I am a LISTENER.`);
             }
             return;
-        }
-
-        case 'new-client': {
-            const newClientId = data.clientId;
-            if (!newClientId) {
-                console.error("BUG FOUND: Server did not send a clientId for the new client.");
-                return; 
-            }
-            console.log(`New client ${newClientId} joined.`);
-            // Add new client to our list
-            allClientIds.push(newClientId); 
-            
-            // If we are the master and a stream is active, send the new client an offer.
-            if (isMaster && localStream) {
-                 await createAndSendOffer(newClientId);
-            }
-            break;
-        }
-
-        case 'client-left': {
-            const leftClientId = data.clientId;
-            console.log(`Client ${leftClientId} left.`);
-            // Remove from  list
-            allClientIds = allClientIds.filter(id => id !== leftClientId); 
-            // Close the peer connection if it exists
-            if (peerConnections[leftClientId]) {
-                if (peerConnections[leftClientId].monitorInterval) {
-                    clearInterval(peerConnections[leftClientId].monitorInterval);
-                }
-                peerConnections[leftClientId].pc.close();
-                delete peerConnections[leftClientId];
-                console.log(`Closed connection to ${leftClientId}`);
-            }
-            break;
         }
 
         case 'offer': {
@@ -165,6 +139,7 @@ async function handleSignalingMessage(event) {
 
         case 'end-call':
             endCall();
+            startCall = false;
             break;
     }
 }
