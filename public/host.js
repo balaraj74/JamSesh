@@ -50,6 +50,14 @@ const init = () => {
             return;
         }
 
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'start-call',
+                code: roomCode,
+                role: 'host'
+            })); // start call mesg to signalling server
+        }
+
         // Disable the start button and enable the end button
         startBtn.disabled = true;
         endBtn.disabled = false;
