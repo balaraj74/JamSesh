@@ -256,7 +256,7 @@ async function createPeerConnection(peerId) {
 
     const sessionIceServers = [...iceServers];
     try {
-        const response = await fetch("http://127.0.0.1:8080/api/get-turn-credentials");
+        const response = await fetch("/api/get-turn-credentials");
         if (response.ok) {
             const turnServers = await response.json();
             if (Array.isArray(turnServers) && turnServers.length > 0) {
