@@ -176,15 +176,14 @@
         // Dynamically load the relevant JS file
         if (role === 'host') {
             const script = document.createElement('script');
-            script.src = 'host.js';
+            script.src = 'js/host.js';
             document.body.appendChild(script);
         }
         else if (role === 'join') {
             const script = document.createElement('script');
-            script.src = 'join.js';
+            script.src = 'js/join.js';
             document.body.appendChild(script);
             }
     </script>
-    <script src="js/PeerConnection.js"></script>
 </body>
 </html>

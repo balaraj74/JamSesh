@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     console.log(`Attempting to join room: ${roomCode}`);
 
-    const ws = new WebSocket("ws://localhost:8080"); //replace wss://jamsesh-8wui.onrender.com 
+    const ws = new WebSocket("wss://jamsesh-8wui.onrender.com"); 
         ws.onopen = () => {
             console.log("Websocket connected");
         };

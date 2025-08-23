@@ -14,13 +14,11 @@ const ADAPTATION_INTERVAL_MS = 5000; // check network every 5 seconds
 
 //html references
 const remoteAudio = document.getElementById('remoteAudio');
-const startBtn = document.getElementById('startBtn');
-const endBtn = document.getElementById('endBtn');
 
 startBtn.disabled = true;
 
 const init = () => {
-    ws = new WebSocket("ws://localhost:8080");// replace wss://jamsesh-8wui.onrender.com
+    ws = new WebSocket("wss://jamsesh-8wui.onrender.com");// replace wss://jamsesh-8wui.onrender.com
     ws.onopen = () => {
         console.log("Websocket connected");
     };
@@ -87,13 +85,6 @@ async function handleSignalingMessage(event) {
             startBtn.disabled = false;
             return;
         }
-        case 'set-master': {
-            // The server sends this to everyone except the master
-            if (data.masterId !== clientId) {
-                console.log(`Master has been set to: ${data.masterId}. I am a LISTENER.`);
-            }
-            return;
-        }
 
         case 'offer': {
             const offererId = data.from;
@@ -148,7 +139,7 @@ async function createPeerConnection(peerId) {
 
     const sessionIceServers = [...iceServers];
     try {
-        const response = await fetch("/api/get-turn-credentials");
+        const response = await fetch("http://127.0.0.1:8080/api/get-turn-credentials");
         if (response.ok) {
             const turnServers = await response.json();
             if (Array.isArray(turnServers) && turnServers.length > 0) {
@@ -164,7 +155,7 @@ async function createPeerConnection(peerId) {
         console.error("Error fetching TURN credentials:", e);
     }
 
-    const pc = new RTCPeerConnection({ iceServers: iceServers });
+    const pc = new RTCPeerConnection({ iceServers: sessionIceServers });
     console.log('PeerConnection initialized.');
 
     pc.ontrack = event => {
