@@ -1,4 +1,4 @@
-const ws = new WebSocket('wss://jamsesh-8wui.onrender.com')
+const ws = new WebSocket('wss://jamsesh-8wui.onrender.com');
 
 let clientId = null;
 let roomCode = null;
@@ -56,7 +56,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (jamCode.length === 6) {
                 enterRoomJoinBtn.style.display = 'inline-block';
             }
-            ws = new WebSocket("wss://jamsesh-8wui.onrender.com");
             ws.onopen = () => {
                 console.log("Websocket connected");
             };
