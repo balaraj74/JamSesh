@@ -1,4 +1,4 @@
-let ws; 
+let ws;
 let clientId = null;
 const peerConnections = {};
 let localStream;
@@ -48,6 +48,14 @@ const init = () => {
         if (isCallInProgress) {
             console.log("Call is already in progress.");
             return;
+        }
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'start-call',
+                code: roomCode,
+                role: 'host'
+            })); // start call mesg to signalling server
         }
 
         // Disable the start button and enable the end button

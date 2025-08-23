@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // index.html
     const joinBtn = document.getElementById('joinBtn');
     if (joinBtn) {
         joinBtn.addEventListener('click', () => {
@@ -50,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // host.html
     const generateCodeBtn = document.getElementById('generateCodeBtn');
     if (generateCodeBtn) {
         generateCodeBtn.addEventListener('click', () => {
@@ -57,6 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // host.html
     const enterRoomHostBtn = document.getElementById('enterRoomHostBtn');
     if(enterRoomHostBtn) {
         enterRoomHostBtn.addEventListener('click', () => {
@@ -66,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // join.html
     const jamCodeInput = document.getElementById('jamCode');
     if (jamCodeInput) {
         jamCodeInput.addEventListener('input', () => {
