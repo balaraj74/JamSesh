@@ -4,6 +4,7 @@ const peerConnections = {};
 let isCallInProgress = false;
 let startCall = false;
 const iceServers = [];
+let allParticipants = [];
 
 const BITRATE_LEVELS = {
     HIGH: 192000,   // 192 kbps 
@@ -18,7 +19,7 @@ const remoteAudio = document.getElementById('remoteAudio');
 startBtn.disabled = true;
 
 const init = () => {
-    ws = new WebSocket("wss://jamsesh-8wui.onrender.com");// replace wss://jamsesh-8wui.onrender.com
+    ws = new WebSocket("replace wss://jamsesh-8wui.onrender.com");
     ws.onopen = () => {
         console.log("Websocket connected");
     };
@@ -65,21 +66,53 @@ const init = () => {
 async function handleSignalingMessage(event) {
 
     const data = JSON.parse(event.data);
-
-    if (data.type === 'init') {
-        clientId = data.clientId;
-        console.log(`I am ${clientId}.`);
-        ws.send(JSON.stringify({
-            type: 'joinroom',
-            code: roomCode,
-            from: clientId
-        }));
-        return;
-    }
-
-    console.log("received signal:", data.type);
-
     switch (data.type) {
+        case 'init': {
+            clientId = data.clientId;
+            window.currentClientId = clientId; 
+            const urlParams = new URLSearchParams(window.location.search);
+            const roomCode = urlParams.get('code');
+            const username = urlParams.get('username');
+            ws.send(JSON.stringify({ type: 'joinroom', code: roomCode, from: clientId, username: username }));
+            break;
+        }
+        case 'join_success': {
+            console.log(`Joiner successfully joined room ${data.code}.`);
+            allParticipants = data.participants;
+            if (typeof window.updateParticipantList === 'function') {
+                window.updateParticipantList(allParticipants);
+            }
+            break;
+        }
+
+        case 'user-joined': {
+            const newParticipant = data.newParticipant;
+            if (!newParticipant) break;
+
+            console.log(`New user ${newParticipant.username} joined.`);
+            allParticipants.push(newParticipant);
+            if (typeof window.updateParticipantList === 'function') {
+                window.updateParticipantList(allParticipants);
+            }
+            break;
+        }
+
+        case 'client-left': {
+            const leavingParticipant = data.participant;
+            if (!leavingParticipant) break;
+
+            console.log(`Client ${leavingParticipant.username} left.`);
+            allParticipants = allParticipants.filter(p => p.id !== leavingParticipant.id);
+            if (typeof window.updateParticipantList === 'function') {
+                window.updateParticipantList(allParticipants);
+            }
+            if (peerConnections[leavingParticipant.id]) {
+                peerConnections[leavingParticipant.id].close();
+                delete peerConnections[leavingParticipant.id];
+            }
+            break;
+        }
+
         case 'start-call': {
             startCall = true;
             startBtn.disabled = false;

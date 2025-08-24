@@ -2,8 +2,8 @@ let ws;
 let clientId = null;
 const peerConnections = {};
 let localStream;
-let isCallInProgress = false; 
-let allClientIds = [];
+let isCallInProgress = false;
+let allParticipants = []; 
 
 const iceServers = [];
 
@@ -18,7 +18,7 @@ const ADAPTATION_INTERVAL_MS = 5000; // check network every 5 seconds
 const localAudio = document.getElementById('localAudio');
 //initialization and creation of websocket connection
 const init = () => {
-    ws = new WebSocket("wss://jamsesh-8wui.onrender.com"); 
+    ws = new WebSocket("wss://jamsesh-8wui.onrender.com");
     ws.onopen = () => {
         console.log("Websocket connected");
     };
@@ -64,11 +64,12 @@ const init = () => {
             localStream.getVideoTracks().forEach(track => track.stop());
             console.log("Master has acquired local audio stream.");
             localAudio.srcObject = localStream;
-            console.log("Sending offers to all existing clients:", allClientIds);
-        for (const targetClientId of allClientIds) {
-            await createAndSendOffer(targetClientId);
+            console.log("Sending offers to all existing clients:", allParticipants);
+        for (const participant of allParticipants) {
+            if (participant.id !== clientId) {
+                await createAndSendOffer(participant.id);
+            }
         }
-        
         endBtn.disabled = false; // Enable end button only after successful setup
 
     } catch (error) {
@@ -96,43 +97,52 @@ async function handleSignalingMessage(event) {
         case 'init': {
             clientId = data.clientId;
             console.log(`My Host ID is: ${clientId}`);
+            if (window.currentClientId === null) {
+                window.currentClientId = clientId;
+            }
             // The roomCode is searched on load
             const urlParams = new URLSearchParams(window.location.search);
             const roomCode = urlParams.get('code');
-            ws.send(JSON.stringify({ type: 'joinroom', code: roomCode, from: clientId }));
+            const username = urlParams.get('username');
+            ws.send(JSON.stringify({ type: 'joinroom', code: roomCode, from: clientId, username: username }));
             break;
         }
 
-        case 'join_success': {
-            console.log(`Host successfully joined room ${data.code}.`);
-            // Set the list of clients, excluding our own ID
-            allClientIds = data.clients.filter(id => id !== clientId);
-            console.log('Joiners already waiting:', allClientIds);
+        case 'join_success': { 
+            console.log(`Successfully joined room ${data.code}.`);
+            allParticipants = data.participants;
+            if (typeof window.updateParticipantList === 'function') {
+                window.updateParticipantList(allParticipants);
+            }
+            const participantNames = allParticipants.map(p => p.username);
+            console.log('Participants in room:', participantNames);
             break;
         }
-
+        
         case 'user-joined': {
-            const newClientId = data.newClientId;
-            console.log(`New user has joined: ${newClientId}.`);
-            allClientIds.push(newClientId);
-            // send offer to the new user
+            const newParticipant = data.newParticipant;
+            if (!newParticipant) break;
+            console.log(`New user ${newParticipant.username} (${newParticipant.id}) joined.`);
+            allParticipants.push(newParticipant);
+            if (typeof window.updateParticipantList === 'function') {
+                window.updateParticipantList(allParticipants);
+            }
             if (localStream) {
-                await createAndSendOffer(newClientId);
+                await createAndSendOffer(newParticipant.id);
             }
             break;
         }
-
         case 'client-left': {
-            const leftClientId = data.clientId;
-            console.log(`Client ${leftClientId} left.`);
-            // Remove from  list
-            allClientIds = allClientIds.filter(id => id !== leftClientId); 
-            // Close the peer connection if it exists
+            const leavingParticipant = data.participant;
+            if (!leavingParticipant) break;
+            const leftClientId = leavingParticipant.id;
+            console.log(`Client ${leavingParticipant.username} (${leftClientId}) left.`);
+            allParticipants = allParticipants.filter(p => p.id !== leftClientId);
+            if (typeof window.updateParticipantList === 'function') {
+                window.updateParticipantList(allParticipants);
+            }
             if (peerConnections[leftClientId]) {
-                if (peerConnections[leftClientId].monitorInterval) {
-                    clearInterval(peerConnections[leftClientId].monitorInterval);
-                }
-                peerConnections[leftClientId].pc.close();
+                peerConnections[leftClientId].close();
                 delete peerConnections[leftClientId];
                 console.log(`Closed connection to ${leftClientId}`);
             }

@@ -75,17 +75,20 @@ function handleClientMessage(ws, message) {
                 const room = activeRooms.get(codeToJoin);
                 
                 // new client has joined
-                room.clients.forEach(id => {
-                    const clientWs = clients.get(id);
-                    if (clientWs) clientWs.send(JSON.stringify({ type: 'user-joined', newClientId: clientId }));
+                const newParticipant = { id: clientId, username: data.username };
+
+                // Notify existing participants
+                room.clients.forEach(p => {
+                    const clientWs = clients.get(p.id);
+                    if (clientWs) clientWs.send(JSON.stringify({ type: 'user-joined', newParticipant }));
                 });
-                room.clients.push(clientId);
+
+                // Add the new participant object to the room
+                room.clients.push(newParticipant);
                 ws.roomCode = codeToJoin;
 
-                ws.send(JSON.stringify({ type: 'join_success', code: codeToJoin, clients: room.clients }));
-                console.log(`Client ${clientId} joined room ${codeToJoin}.`);
-            } else {
-                ws.send(JSON.stringify({ type: 'join_fail', reason: 'Room not found.' }));
+                // Send success message with the full list of participant objects
+                ws.send(JSON.stringify({ type: 'join_success', code: codeToJoin, participants: room.clients }));
             }
             break;
 
@@ -124,11 +127,12 @@ function handleClientDisconnect(ws) {
 
     if (roomCode && activeRooms.has(roomCode)) {
         const room = activeRooms.get(roomCode);
-        room.clients = room.clients.filter(id => id !== clientId);
+        const leavingParticipant = room.clients.find(p => p.id === clientId);
+        room.clients = room.clients.filter(p => p.id !== clientId);
 
-        room.clients.forEach(id => {
-            const clientWs = clients.get(id);
-            if (clientWs) clientWs.send(JSON.stringify({ type: 'client-left', clientId: clientId }));
+        room.clients.forEach(p => {
+            const clientWs = clients.get(p.id);
+            if (clientWs) clientWs.send(JSON.stringify({ type: 'client-left', participant: leavingParticipant }));
         });
 
         if (room.clients.length === 0) {
