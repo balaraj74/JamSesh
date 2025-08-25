@@ -59,7 +59,13 @@ const init = () => {
 
         // Acquire media
         try {
-            localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+            const audioConstraints = {
+                autoGainControl: false,
+                echoCancellation: false,
+                noiseSuppression: false
+            };
+
+            localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: audioConstraints });
             // stopping the video track
             localStream.getVideoTracks().forEach(track => track.stop());
             console.log("Master has acquired local audio stream.");

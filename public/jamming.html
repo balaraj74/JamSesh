@@ -65,10 +65,37 @@
             .main-container { flex-direction: column-reverse; align-items: center; }
             #participants-container { width: 90%; margin-bottom: 20px; }
         }
+        .room-info {
+    font-family: 'Fjalla One', sans-serif;
+    font-size: 24px; /* <-- Increased font size */
+    color: #ffffffa0;
+    background-color: #1a2b4a;
+    padding: 10px 20px; /* <-- Slightly increased padding */
+    border-radius: 25px;
+    margin-bottom: 25px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+.room-info:hover {
+    transform: scale(1.05);
+    background-color: #2a3f68;
+}
+
+.room-info.copied {
+    background-color: #006400; 
+    border-color: #32CD32;
+}
+
     </style>
 </head>
 <body>
     <h1>JamSesh In Session</h1>
+    <div class="room-info" title="Click to copy room code">
+    Room Code: <span id="room-code-display">Copy Code</span>
+</div>
 
     <div class="main-container">
         <div class="session-container">
@@ -98,6 +125,8 @@
     </div>
 
     <script>
+        const roomInfoDiv = document.querySelector('.room-info');
+        const roomCodeDisplay = document.getElementById('room-code-display');
         const startBtn = document.getElementById('startBtn');
         const endBtn = document.getElementById('endBtn');
         const exitBtn = document.getElementById('exitBtn');
@@ -121,6 +150,21 @@
                 participantsList.appendChild(li);
             });
         }
+        if (roomInfoDiv && roomCodeDisplay) {
+            roomInfoDiv.addEventListener('click', () => {
+                if (!roomCode) return; 
+                navigator.clipboard.writeText(roomCode).then(() => {
+                roomCodeDisplay.textContent = 'Copied!';
+                roomInfoDiv.classList.add('copied');
+                setTimeout(() => { roomCodeDisplay.textContent = roomCode; roomInfoDiv.classList.remove('copied'); }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy room code: ', err);
+            alert('Could not copy code. Please copy it manually.');
+        });
+    });
+}
+
+
         if (role === 'host') {
             remoteAudioWrapper.style.display = 'none';
             exitBtn.style.display = 'none';
