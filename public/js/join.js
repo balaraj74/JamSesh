@@ -19,7 +19,7 @@ const remoteAudio = document.getElementById('remoteAudio');
 startBtn.disabled = true;
 
 const init = () => {
-    ws = new WebSocket("replace wss://jamsesh-8wui.onrender.com");
+    ws = new WebSocket("wss://jamsesh-8wui.onrender.com");
     ws.onopen = () => {
         console.log("Websocket connected");
     };
