@@ -17,6 +17,9 @@ app.use(cors());
 
 app.use(express.static(path.join(__dirname, '../public')));
 
+app.get('/api/ping', (req, res) => {
+    res.send('pong');
+});
 
 app.get('/api/get-turn-credentials', async (req, res) => {
     try {
