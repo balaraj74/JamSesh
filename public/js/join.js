@@ -225,6 +225,15 @@ async function createPeerConnection(peerId) {
         // plays audio
         console.log('Remote track received', event.streams[0]);
 
+        if (remoteAudio) { 
+            remoteAudio.srcObject = event.streams[0];
+            remoteAudio.play()
+                .catch(e => {
+                    console.warn("Autoplay was blocked. User must interact with the page first.", e.name);
+                });
+        }else {
+            console.warn("Remote audio element not found");
+        }
 
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const source = audioCtx.createMediaStreamSource(event.streams[0]);
