@@ -1,3 +1,33 @@
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+// Load timesync before running anything else
+loadScript("https://unpkg.com/timesync/dist/timesync.min.js").then(() => {
+    console.log("✅ timesync loaded");
+
+    // === Time sync setup ===
+    var ts = timesync.create({
+        server: '/timesync',
+        interval: 5000
+    });
+
+    // tells how far off device's clock is from server's clock
+    let timeOffset = 0; 
+    ts.on('change', function (offset) {
+        timeOffset = offset;
+        console.log('Clock offset from server:', offset, 'ms');
+    });
+
+    
+    const FIXED_DELAY_MS = 400; 
+
 let ws;
 let clientId = null;
 const peerConnections = {};
@@ -194,15 +224,28 @@ async function createPeerConnection(peerId) {
     pc.ontrack = event => {
         // plays audio
         console.log('Remote track received', event.streams[0]);
-        if (remoteAudio) { 
-            remoteAudio.srcObject = event.streams[0];
-            remoteAudio.play()
-                .catch(e => {
-                    console.warn("Autoplay was blocked. User must interact with the page first.", e.name);
-                });
-        }else {
-            console.warn("Remote audio element not found");
-        }
+
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(event.streams[0]);
+        source.connect(audioCtx.destination);
+
+        // when to start playback wrt server time
+        //tlocal->local time;  tserver-> local time; wrtserver-> time it should start playback wrt server
+        const tlocal = Date.now();
+        const tserver = tlocal + timeOffset; // adjust local clock to server clock
+        const wrtserver = tserver + FIXED_DELAY_MS;
+
+        // convert server time back to local time
+        const delayMs = wrtserver - (Date.now() + timeOffset);
+
+        console.log(`audio start in ${delayMs} ms`);   //debug log
+        audioCtx.suspend().then(() => {
+            setTimeout(() => {
+                audioCtx.resume();
+                console.log("resumed in sync!");
+            }, Math.max(0, delayMs));
+        });
     };
 
     pc.onconnectionstatechange = () => {
@@ -313,3 +356,4 @@ function endCall() {
 }
 
 window.onload = init;
+});

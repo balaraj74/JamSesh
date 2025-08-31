@@ -17,6 +17,9 @@ app.use(cors());
 
 app.use(express.static(path.join(__dirname, '../public')));
 
+const timesyncServer = require('timesync/server');
+app.use('/timesync', timesyncServer.requestHandler);
+
 app.get('/api/ping', (req, res) => {
     res.send('pong');
 });
