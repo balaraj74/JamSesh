@@ -241,6 +241,10 @@ async function createPeerConnection(peerId) {
 
         // when to start playback wrt server time
         //tlocal->local time;  tserver-> local time; wrtserver-> time it should start playback wrt server
+        syncPlayback(audioCtx);
+        const intervalId = setInterval(() => syncPlayback(audioCtx), 5000);
+        function syncPlayback(audioCtx)
+        {
         const tlocal = Date.now();
         const tserver = tlocal + timeOffset; // adjust local clock to server clock
         const wrtserver = tserver + FIXED_DELAY_MS;
@@ -256,6 +260,7 @@ async function createPeerConnection(peerId) {
             }, Math.max(0, delayMs));
         });
     };
+}
 
     pc.onconnectionstatechange = () => {
         console.log(`Peer Connection State for ${peerId}:`, pc.connectionState);
@@ -348,8 +353,13 @@ function endCall() {
     // loop and clear intervals before closing connections
     for (const id in peerConnections) {
         const peer = peerConnections[id];
+        
         if (peer.monitorInterval) {
             clearInterval(peer.monitorInterval);
+        }
+
+        if(peer.syncInterval) {
+            clearInterval(peer.syncInterval);
         }
         if (peer.pc) {
             peer.pc.close();
