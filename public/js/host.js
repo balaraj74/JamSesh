@@ -110,7 +110,7 @@ async function handleSignalingMessage(event) {
             const urlParams = new URLSearchParams(window.location.search);
             const roomCode = urlParams.get('code');
             const username = urlParams.get('username');
-            ws.send(JSON.stringify({ type: 'joinroom', code: roomCode, from: clientId, username: username }));
+            ws.send(JSON.stringify({ type: 'joinroom', code: roomCode, from: clientId, username: username, role: 'host' }));
             break;
         }
 
@@ -186,6 +186,18 @@ async function handleSignalingMessage(event) {
                 }
             } else {
                 console.warn(`ICE candidate received for unknown peer ${peerId} or no candidate data.`);
+            }
+            break;
+        }
+
+        case 'host-promoted': {
+            // This message is sent when the original host leaves and we're promoted
+            if (data.isYou) {
+                console.log('🎉 You have been promoted to host!');
+                // Show notification to user
+                alert(`You are now the host! Previous host ${data.newHostUsername || 'someone'} left the session.`);
+            } else {
+                console.log(`${data.newHostUsername} is now the host.`);
             }
             break;
         }

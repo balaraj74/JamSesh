@@ -30,9 +30,11 @@ loadScript("https://unpkg.com/timesync/dist/timesync.min.js").then(() => {
 
 let ws;
 let clientId = null;
+let roomCode = null; // Store room code for when joiner becomes host
 const peerConnections = {};
 let isCallInProgress = false;
 let startCall = false;
+let localStream; // For when a joiner becomes the host
 const iceServers = [];
 let allParticipants = [];
 
@@ -101,7 +103,7 @@ async function handleSignalingMessage(event) {
             clientId = data.clientId;
             window.currentClientId = clientId; 
             const urlParams = new URLSearchParams(window.location.search);
-            const roomCode = urlParams.get('code');
+            roomCode = urlParams.get('code'); // Store in global variable
             const username = urlParams.get('username');
             ws.send(JSON.stringify({ type: 'joinroom', code: roomCode, from: clientId, username: username }));
             break;
@@ -176,6 +178,27 @@ async function handleSignalingMessage(event) {
             break;
         }
 
+        case 'answer': {
+            // When we're promoted to host and send offers, we'll receive answers
+            const answererId = data.from;
+            const peer = peerConnections[answererId];
+            if (!peer || !peer.pc) {
+                console.error("Answer received but peerConnection not initialized for:", answererId);
+                return;
+            }
+            await peer.pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            console.log(`Received answer from ${answererId} as new host. Call established.`);
+
+            // Start monitoring network quality for this peer
+            if (peer && !peer.monitorInterval) {
+                peer.monitorInterval = setInterval(() => {
+                    monitorAndAdaptBitrate(answererId);
+                }, ADAPTATION_INTERVAL_MS);
+                console.log(`Started network quality monitoring for ${answererId}.`);
+            }
+            break;
+        }
+
         case 'ice-candidate': {
             const peerId = data.from;
             const pc = peerConnections[peerId]?.pc; 
@@ -187,6 +210,74 @@ async function handleSignalingMessage(event) {
                 }
             } else {
                 console.warn(`ICE candidate received for unknown peer ${peerId} or no candidate data.`);
+            }
+            break;
+        }
+
+        case 'host-promoted': {
+            // This message is sent when the original host leaves
+            if (data.isYou) {
+                console.log('🎉 You have been promoted to host!');
+                // Show notification to user that they are now the host
+                alert('You are now the host! The previous host has left the session. You can now start the jam when ready.');
+                
+                // Enable start button so new host can control the session
+                if (startBtn) {
+                    startBtn.disabled = false;
+                    startBtn.textContent = 'Start Jam (You are Host)';
+                }
+                
+                // The new host needs to be able to share audio like the original host
+                // We need to acquire media when they click start
+                startBtn.addEventListener('click', async () => {
+                    if (isCallInProgress) {
+                        console.log("Call is already in progress.");
+                        return;
+                    }
+
+                    // Acquire media like the host does
+                    try {
+                        const audioConstraints = {
+                            autoGainControl: false,
+                            echoCancellation: false,
+                            noiseSuppression: false
+                        };
+
+                        localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: audioConstraints });
+                        // Stop the video track
+                        localStream.getVideoTracks().forEach(track => track.stop());
+                        console.log("New host has acquired local audio stream.");
+                        
+                        // Notify server to start the call
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'start-call',
+                                code: roomCode,
+                                role: 'host'
+                            }));
+                        }
+                        
+                        // Create offers to all other participants
+                        for (const participant of allParticipants) {
+                            if (participant.id !== clientId) {
+                                await createAndSendOfferAsNewHost(participant.id);
+                            }
+                        }
+                        
+                        startBtn.disabled = true;
+                        endBtn.disabled = false;
+                        isCallInProgress = true;
+                    } catch (error) {
+                        console.error("New host failed to acquire media:", error);
+                        alert("Failed to start audio streaming. Please try again.");
+                    }
+                }, { once: true }); // Use once to prevent multiple listeners
+            } else {
+                console.log(`${data.newHostUsername} is now the host.`);
+                // Update UI to show who the new host is
+                if (typeof window.updateHostIndicator === 'function') {
+                    window.updateHostIndicator(data.newHostUsername);
+                }
             }
             break;
         }
@@ -340,6 +431,57 @@ async function monitorAndAdaptBitrate(peerId) {
             setBitrateForPeer(peerId, 'HIGH');
         }
     }
+}
+
+// Function for new host to create and send offers to other participants
+async function createAndSendOfferAsNewHost(targetClientId) {
+    if (peerConnections[targetClientId]) {
+        console.warn(`Connection to ${targetClientId} already exists.`);
+        return;
+    }
+    console.log(`New host initiating connection to ${targetClientId}`);
+    const pc = await createPeerConnection(targetClientId);
+    
+    peerConnections[targetClientId] = {
+        pc: pc,
+        audioSender: null,
+        currentBitrate: 'HIGH',
+        monitorInterval: null
+    };
+
+    if (localStream) {
+        const audioTracks = localStream.getAudioTracks();
+        if (audioTracks.length > 0) {
+            const audioSender = pc.addTrack(audioTracks[0], localStream);
+            peerConnections[targetClientId].audioSender = audioSender;
+            console.log("Added audio track for streaming as new host.");
+
+            // Set initial bitrate
+            const audioParameters = audioSender.getParameters();
+            if (!audioParameters.encodings) {
+                audioParameters.encodings = [{}];
+            }
+            audioParameters.encodings[0].maxBitrate = BITRATE_LEVELS.HIGH;
+            audioParameters.encodings[0].priority = 'high';
+            try {
+                await audioSender.setParameters(audioParameters);
+                console.log('Audio sender parameters set to high bitrate.');
+            } catch (e) {
+                console.warn('Failed to set audio sender parameters:', e);
+            }
+        }
+    }
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    ws.send(JSON.stringify({
+        type: 'offer',
+        sdp: pc.localDescription,
+        to: targetClientId,
+        from: clientId
+    }));
+    console.log(`Offer sent to ${targetClientId} as new host.`);
 }
 
 function endCall() {
