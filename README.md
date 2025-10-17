@@ -2,6 +2,20 @@
 
 **JamSesh** is a real-time, multi-device audio streaming app built with WebRTC. One device acts as the master and streams audio, while other devices as clients can join at any time and hear the same audio in perfect sync whether in the same room (to create a speaker-like effect) or across the internet. The core focus is on achieving minimal latency for a seamless, synchronized listening experience.
 
+# Basic Info
+### Tech Stack
+- HTML
+- CSS
+- JavaScript
+- WebRTC
+
+### Maintainer in Charge
+Maaya Mohan ([@maayamohan](https://github.com/maayamohan/))
+
+### Contribution
+Checkout ([CONTRIBUTING.md]()) for a brief on how to start contributing to this project!
+
+
 # Steps to Run 
 ### Pre-requisites: 
 - Git must be setup
@@ -29,7 +43,9 @@ node server.js
 
 
 ### For hosted website 
-- Open [website link]
+- Open ([JamSesh](https://jamsesh-8wui.onrender.com/))
+
+
 
 
 # Mentees:
