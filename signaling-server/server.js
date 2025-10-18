@@ -168,12 +168,14 @@ function handleClientMessage(ws, message) {
                         room.clients.forEach(p => {
                             const clientWs = clients.get(p.id);
                             if (clientWs) {
-                                clientWs.send(JSON.stringify({ 
+                                const promotionMessage = { 
                                     type: 'host-promoted', 
                                     newHostId: newHost.id,
                                     newHostUsername: newHost.username,
                                     isYou: p.id === newHost.id
-                                }));
+                                };
+                                console.log(`Sending host-promoted to ${p.username} (${p.id}):`, promotionMessage);
+                                clientWs.send(JSON.stringify(promotionMessage));
                             }
                         });
                     } else {
@@ -232,12 +234,14 @@ function handleClientDisconnect(ws) {
             room.clients.forEach(p => {
                 const clientWs = clients.get(p.id);
                 if (clientWs) {
-                    clientWs.send(JSON.stringify({ 
+                    const promotionMessage = { 
                         type: 'host-promoted', 
                         newHostId: newHost.id,
                         newHostUsername: newHost.username,
                         isYou: p.id === newHost.id
-                    }));
+                    };
+                    console.log(`Sending host-promoted to ${p.username} (${p.id}):`, promotionMessage);
+                    clientWs.send(JSON.stringify(promotionMessage));
                 }
             });
         }
