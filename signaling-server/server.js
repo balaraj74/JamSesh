@@ -112,10 +112,9 @@ function handleClientMessage(ws, message) {
             break;
 
         case 'start-call':
-        case 'end-call':
             if (roomCode && activeRooms.has(roomCode)) {
                 const room = activeRooms.get(roomCode);
-                // Only allow the host to start/end calls
+                // Only allow the host to start calls
                 if (room.hostId === clientId) {
                     room.clients.forEach(p => {
                         if (p.id !== clientId) { 
@@ -125,6 +124,65 @@ function handleClientMessage(ws, message) {
                     });
                 } else {
                     console.log(`Non-host ${clientId} attempted to ${data.type}`);
+                }
+            }
+            break;
+
+        case 'end-call':
+            if (roomCode && activeRooms.has(roomCode)) {
+                const room = activeRooms.get(roomCode);
+                // Only allow the host to end calls
+                if (room.hostId === clientId) {
+                    console.log(`Host ${clientId} ended the call in room ${roomCode}`);
+                    
+                    // Broadcast end-call to other participants first
+                    room.clients.forEach(p => {
+                        if (p.id !== clientId) { 
+                            const clientWs = clients.get(p.id);
+                            if (clientWs) clientWs.send(JSON.stringify({ type: 'end-call' }));
+                        }
+                    });
+                    
+                    // Remove the host from the room (they're ending their session)
+                    const leavingHost = room.clients.find(p => p.id === clientId);
+                    room.clients = room.clients.filter(p => p.id !== clientId);
+                    
+                    // Notify remaining participants that host left
+                    room.clients.forEach(p => {
+                        const clientWs = clients.get(p.id);
+                        if (clientWs) clientWs.send(JSON.stringify({ 
+                            type: 'client-left', 
+                            participant: leavingHost 
+                        }));
+                    });
+                    
+                    // If there are still participants, promote the next one to host
+                    if (room.clients.length > 0) {
+                        const newHost = room.clients[0];
+                        room.hostId = newHost.id;
+                        newHost.isHost = true;
+                        
+                        console.log(`Promoting ${newHost.id} (${newHost.username}) to host in room ${roomCode}`);
+                        
+                        // Notify all remaining clients about the new host
+                        room.clients.forEach(p => {
+                            const clientWs = clients.get(p.id);
+                            if (clientWs) {
+                                clientWs.send(JSON.stringify({ 
+                                    type: 'host-promoted', 
+                                    newHostId: newHost.id,
+                                    newHostUsername: newHost.username,
+                                    isYou: p.id === newHost.id
+                                }));
+                            }
+                        });
+                    } else {
+                        // No one left, delete the room
+                        activeRooms.delete(roomCode);
+                        console.log(`Room ${roomCode} is now empty and has been deleted.`);
+                    }
+                } else {
+                    console.log(`Non-host ${clientId} attempted to end call`);
                 }
             }
             break;
