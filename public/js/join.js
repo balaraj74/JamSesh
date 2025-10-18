@@ -47,8 +47,12 @@ const ADAPTATION_INTERVAL_MS = 5000; // check network every 5 seconds
 
 //html references
 const remoteAudio = document.getElementById('remoteAudio');
+const localAudio = document.getElementById('localAudio');
+const startBtn = document.getElementById('startBtn');
+const endBtn = document.getElementById('endBtn');
+const exitBtn = document.getElementById('exitBtn');
 
-startBtn.disabled = true;
+if (startBtn) startBtn.disabled = true;
 
 const init = () => {
     ws = new WebSocket("wss://jamsesh-8wui.onrender.com");
@@ -218,18 +222,48 @@ async function handleSignalingMessage(event) {
             // This message is sent when the original host leaves
             if (data.isYou) {
                 console.log('🎉 You have been promoted to host!');
+                
                 // Show notification to user that they are now the host
                 alert('You are now the host! The previous host has left the session. You can now start the jam when ready.');
                 
-                // Enable start button so new host can control the session
+                // Show and enable UI elements for the new host
+                const localAudioWrapper = document.querySelector('.audio-wrapper:first-child');
+                const remoteAudioWrapper = document.querySelector('.audio-wrapper:last-child');
+                
+                // Show local audio controls (previously hidden for join role)
+                if (localAudioWrapper) {
+                    localAudioWrapper.style.display = 'block';
+                }
+                
+                // Hide remote audio controls (now we're streaming, not receiving)
+                if (remoteAudioWrapper) {
+                    remoteAudioWrapper.style.display = 'none';
+                }
+                
+                // Enable start button
                 if (startBtn) {
+                    startBtn.style.display = 'block';
                     startBtn.disabled = false;
                     startBtn.textContent = 'Start Jam (You are Host)';
                 }
                 
+                // Enable end button
+                if (endBtn) {
+                    endBtn.style.display = 'block';
+                    endBtn.disabled = true; // Will be enabled after start
+                }
+                
+                // Hide exit button (hosts don't have exit, they have end)
+                if (exitBtn) {
+                    exitBtn.style.display = 'none';
+                }
+                
                 // The new host needs to be able to share audio like the original host
-                // We need to acquire media when they click start
-                startBtn.addEventListener('click', async () => {
+                // Remove old listener and add new one
+                const newStartBtn = startBtn.cloneNode(true);
+                startBtn.parentNode.replaceChild(newStartBtn, startBtn);
+                
+                newStartBtn.addEventListener('click', async () => {
                     if (isCallInProgress) {
                         console.log("Call is already in progress.");
                         return;
@@ -237,6 +271,9 @@ async function handleSignalingMessage(event) {
 
                     // Acquire media like the host does
                     try {
+                        newStartBtn.disabled = true;
+                        newStartBtn.textContent = 'Acquiring audio...';
+                        
                         const audioConstraints = {
                             autoGainControl: false,
                             echoCancellation: false,
@@ -248,6 +285,12 @@ async function handleSignalingMessage(event) {
                         localStream.getVideoTracks().forEach(track => track.stop());
                         console.log("New host has acquired local audio stream.");
                         
+                        // Play local audio
+                        const localAudio = document.getElementById('localAudio');
+                        if (localAudio) {
+                            localAudio.srcObject = localStream;
+                        }
+                        
                         // Notify server to start the call
                         if (ws && ws.readyState === WebSocket.OPEN) {
                             ws.send(JSON.stringify({
@@ -258,20 +301,28 @@ async function handleSignalingMessage(event) {
                         }
                         
                         // Create offers to all other participants
+                        console.log('Creating offers to all participants:', allParticipants);
                         for (const participant of allParticipants) {
                             if (participant.id !== clientId) {
                                 await createAndSendOfferAsNewHost(participant.id);
                             }
                         }
                         
-                        startBtn.disabled = true;
-                        endBtn.disabled = false;
+                        newStartBtn.textContent = 'Streaming...';
+                        const newEndBtn = document.getElementById('endBtn');
+                        if (newEndBtn) {
+                            newEndBtn.disabled = false;
+                        }
                         isCallInProgress = true;
+                        
+                        console.log('New host is now streaming to all participants!');
                     } catch (error) {
                         console.error("New host failed to acquire media:", error);
                         alert("Failed to start audio streaming. Please try again.");
+                        newStartBtn.disabled = false;
+                        newStartBtn.textContent = 'Start Jam (You are Host)';
                     }
-                }, { once: true }); // Use once to prevent multiple listeners
+                });
             } else {
                 console.log(`${data.newHostUsername} is now the host.`);
                 // Update UI to show who the new host is
