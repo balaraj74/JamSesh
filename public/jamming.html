@@ -137,19 +137,58 @@
         const role = params.get('role');
         const roomCode = params.get('code');
         let currentClientId = null; 
-        function updateParticipantList(participants) {
-            const participantsList = document.getElementById('participants-list');
-            participantsList.innerHTML = ''; 
-            participants.forEach(p => {
+        let currentHostId = null;
+
+        window.updateParticipantList = function(participants, hostId) {
+            currentHostId = hostId ?? currentHostId;
+            participantsList.innerHTML = '';
+            (participants || []).forEach(p => {
                 const li = document.createElement('li');
-                li.textContent = p.username;
+                let label = p.username;
+                if (p.id === currentHostId) {
+                    label += ' 👑';
+                }
                 if (p.id === currentClientId) {
-                    li.textContent += ' (You)';
+                    label += ' (You)';
                     li.classList.add('you');
                 }
+                li.textContent = label;
                 participantsList.appendChild(li);
             });
-        }
+        };
+
+        window.enableHostUI = function() {
+            if (localAudioWrapper) localAudioWrapper.style.display = '';
+            if (remoteAudioWrapper) remoteAudioWrapper.style.display = 'none';
+            if (startBtn) {
+                startBtn.style.display = '';
+                startBtn.disabled = false;
+            }
+            if (endBtn) {
+                endBtn.style.display = '';
+            }
+            if (exitBtn) {
+                exitBtn.style.display = 'none';
+            }
+        };
+
+        window.enableListenerUI = function() {
+            if (localAudioWrapper) localAudioWrapper.style.display = 'none';
+            if (remoteAudioWrapper) remoteAudioWrapper.style.display = '';
+            if (startBtn) {
+                startBtn.style.display = 'none';
+            }
+            if (endBtn) {
+                endBtn.style.display = 'none';
+            }
+            if (exitBtn) {
+                exitBtn.style.display = '';
+            }
+        };
+
+        window.setHostIdentity = function(hostId) {
+            currentHostId = hostId;
+        };
         if (roomInfoDiv && roomCodeDisplay) {
             roomInfoDiv.addEventListener('click', () => {
                 if (!roomCode) return; 
@@ -166,12 +205,9 @@
 
 
         if (role === 'host') {
-            remoteAudioWrapper.style.display = 'none';
-            exitBtn.style.display = 'none';
+            window.enableHostUI();
         } else if (role === 'join') {
-            localAudioWrapper.style.display = 'none';
-            startBtn.style.display = 'none';
-            endBtn.style.display = 'none';
+            window.enableListenerUI();
         }
         exitBtn.addEventListener('click', () => {
             if (window.ws) {

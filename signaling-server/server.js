@@ -13,6 +13,42 @@ const wss = new WebSocket.Server({ server });
 const clients = new Map();
 const activeRooms = new Map();
 
+function sanitizeParticipants(room) {
+    if (!room) {
+        return [];
+    }
+    return room.clients.map(client => ({
+        id: client.id,
+        username: client.username,
+        isHost: room.hostId === client.id
+    }));
+}
+
+function setRoomHost(room, newHostId) {
+    if (!room) return;
+    room.hostId = newHostId || null;
+    room.clients.forEach(client => {
+        client.isHost = client.id === room.hostId;
+    });
+}
+
+function broadcastRoomState(roomCode) {
+    const room = activeRooms.get(roomCode);
+    if (!room) return;
+    const payload = {
+        type: 'room-update',
+        participants: sanitizeParticipants(room),
+        hostId: room.hostId
+    };
+
+    room.clients.forEach(client => {
+        const clientWs = clients.get(client.id);
+        if (clientWs) {
+            clientWs.send(JSON.stringify(payload));
+        }
+    });
+}
+
 app.use(cors()); 
 
 app.use(express.static(path.join(__dirname, '../public')));
@@ -55,6 +91,22 @@ wss.on('connection', (ws) => {
     ws.on('close', () => handleClientDisconnect(ws));
 });
 
+function sendHostPromoted(roomCode, newHostId, newHostUsername) {
+    const room = activeRooms.get(roomCode);
+    if (!room) return;
+    room.clients.forEach(client => {
+        const clientWs = clients.get(client.id);
+        if (clientWs) {
+            clientWs.send(JSON.stringify({
+                type: 'host-promoted',
+                newHostId,
+                newHostUsername,
+                isYou: client.id === newHostId
+            }));
+        }
+    });
+}
+
 function handleClientMessage(ws, message) {
     const data = JSON.parse(message.toString());
     const clientId = ws.clientId;
@@ -75,47 +127,64 @@ function handleClientMessage(ws, message) {
             }));
             break;
 
-        case 'joinroom':
+        case 'joinroom': {
             const codeToJoin = data.code;
-            if (activeRooms.has(codeToJoin)) {
-                const room = activeRooms.get(codeToJoin);
-                
-                // new client has joined
-                const newParticipant = { id: clientId, username: data.username, role: data.role || 'join' };
-
-                // Set as host if first person or if they're joining from host page
-                if (room.clients.length === 0 || data.role === 'host') {
-                    room.hostId = clientId;
-                    newParticipant.isHost = true;
-                    console.log(`${clientId} (${data.username}) is now the host of room ${codeToJoin}`);
-                }
-
-                // Notify existing participants
-                room.clients.forEach(p => {
-                    const clientWs = clients.get(p.id);
-                    if (clientWs) clientWs.send(JSON.stringify({ type: 'user-joined', newParticipant }));
-                });
-
-                // Add the new participant object to the room
-                room.clients.push(newParticipant);
-                ws.roomCode = codeToJoin;
-
-                // Send success message with the full list of participant objects and host info
-                ws.send(JSON.stringify({ 
-                    type: 'join_success', 
-                    code: codeToJoin, 
-                    participants: room.clients,
-                    hostId: room.hostId,
-                    isHost: clientId === room.hostId
-                }));
+            if (!activeRooms.has(codeToJoin)) {
+                console.warn(`Client ${clientId} attempted to join non-existent room ${codeToJoin}`);
+                break;
             }
+
+            const room = activeRooms.get(codeToJoin);
+            console.log(`[JOINROOM] Before adding ${clientId}: room.hostId = ${room.hostId}, room.clients.length = ${room.clients.length}`);
+            
+            const newParticipant = {
+                id: clientId,
+                username: data.username,
+                role: data.role || 'join',
+                isHost: false
+            };
+
+            // Notify existing participants before updating room state
+            room.clients.forEach(p => {
+                const clientWs = clients.get(p.id);
+                if (clientWs) {
+                    clientWs.send(JSON.stringify({ type: 'user-joined', newParticipant }));
+                }
+            });
+
+            room.clients.push(newParticipant);
+            ws.roomCode = codeToJoin;
+
+            if (!room.hostId) {
+                setRoomHost(room, clientId);
+                console.log(`[JOINROOM] First to join: ${clientId} (${data.username}) is now the host of room ${codeToJoin}`);
+            } else {
+                setRoomHost(room, room.hostId);
+                console.log(`[JOINROOM] Not first: Keeping existing host ${room.hostId}`);
+            }
+
+            const snapshot = sanitizeParticipants(room);
+            console.log(`[JOIN_SUCCESS] Sending to ${clientId}:`, {
+                hostId: room.hostId,
+                isHost: clientId === room.hostId,
+                participantCount: snapshot.length
+            });
+            ws.send(JSON.stringify({
+                type: 'join_success',
+                code: codeToJoin,
+                participants: snapshot,
+                hostId: room.hostId,
+                isHost: clientId === room.hostId
+            }));
+
+            broadcastRoomState(codeToJoin);
             break;
+        }
 
         case 'start-call':
-        case 'end-call':
             if (roomCode && activeRooms.has(roomCode)) {
                 const room = activeRooms.get(roomCode);
-                // Only allow the host to start/end calls
+                // Only allow the host to start calls
                 if (room.hostId === clientId) {
                     room.clients.forEach(p => {
                         if (p.id !== clientId) { 
@@ -125,6 +194,51 @@ function handleClientMessage(ws, message) {
                     });
                 } else {
                     console.log(`Non-host ${clientId} attempted to ${data.type}`);
+                }
+            }
+            break;
+
+        case 'end-call':
+            if (roomCode && activeRooms.has(roomCode)) {
+                const room = activeRooms.get(roomCode);
+                // Only allow the host to end calls
+                if (room.hostId === clientId) {
+                    console.log(`Host ${clientId} ended the call in room ${roomCode}`);
+                    
+                    // Broadcast end-call to other participants first
+                    room.clients.forEach(p => {
+                        if (p.id !== clientId) { 
+                            const clientWs = clients.get(p.id);
+                            if (clientWs) clientWs.send(JSON.stringify({ type: 'end-call' }));
+                        }
+                    });
+                    
+                    // Remove the host from the room (they're ending their session)
+                    const leavingHost = room.clients.find(p => p.id === clientId);
+                    room.clients = room.clients.filter(p => p.id !== clientId);
+                    
+                    // Notify remaining participants that host left
+                    room.clients.forEach(p => {
+                        const clientWs = clients.get(p.id);
+                        if (clientWs) clientWs.send(JSON.stringify({ 
+                            type: 'client-left', 
+                            participant: leavingHost 
+                        }));
+                    });
+                    
+                    // If there are still participants, promote the next one to host
+                    if (room.clients.length > 0) {
+                        const newHost = room.clients[0];
+                        setRoomHost(room, newHost.id);
+                        console.log(`Promoting ${newHost.id} (${newHost.username}) to host in room ${roomCode}`);
+                        broadcastRoomState(roomCode);
+                    } else {
+                        // No one left, delete the room
+                        activeRooms.delete(roomCode);
+                        console.log(`Room ${roomCode} is now empty and has been deleted.`);
+                    }
+                } else {
+                    console.log(`Non-host ${clientId} attempted to end call`);
                 }
             }
             break;
@@ -164,24 +278,10 @@ function handleClientDisconnect(ws) {
 
         // If the host left and there are still participants, promote the next one
         if (wasHost && room.clients.length > 0) {
-            const newHost = room.clients[0]; // Promote first remaining participant
-            room.hostId = newHost.id;
-            newHost.isHost = true;
-            
+            const newHost = room.clients[0];
+            setRoomHost(room, newHost.id);
             console.log(`Host left. Promoting ${newHost.id} (${newHost.username}) to host in room ${roomCode}`);
-            
-            // Notify all clients about the new host
-            room.clients.forEach(p => {
-                const clientWs = clients.get(p.id);
-                if (clientWs) {
-                    clientWs.send(JSON.stringify({ 
-                        type: 'host-promoted', 
-                        newHostId: newHost.id,
-                        newHostUsername: newHost.username,
-                        isYou: p.id === newHost.id
-                    }));
-                }
-            });
+            broadcastRoomState(roomCode);
         }
 
         if (room.clients.length === 0) {
