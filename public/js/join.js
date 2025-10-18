@@ -37,6 +37,8 @@ let startCall = false;
 let localStream; // For when a joiner becomes the host
 const iceServers = [];
 let allParticipants = [];
+let currentHostId = null;
+let isCurrentHost = false;
 
 const BITRATE_LEVELS = {
     HIGH: 192000,   // 192 kbps 
@@ -48,14 +50,231 @@ const ADAPTATION_INTERVAL_MS = 5000; // check network every 5 seconds
 //html references
 const remoteAudio = document.getElementById('remoteAudio');
 const localAudio = document.getElementById('localAudio');
-const startBtn = document.getElementById('startBtn');
-const endBtn = document.getElementById('endBtn');
-const exitBtn = document.getElementById('exitBtn');
+let startBtn = document.getElementById('startBtn');
+let endBtn = document.getElementById('endBtn');
+let exitBtn = document.getElementById('exitBtn');
+const localAudioWrapper = document.querySelector('.audio-wrapper:first-child');
+const remoteAudioWrapper = document.querySelector('.audio-wrapper:last-child');
+const participantsListEl = document.getElementById('participants-list');
 
-if (startBtn) startBtn.disabled = true;
+function cacheRoomState(participants, hostId) {
+    try {
+        localStorage.setItem('jamsesh.roomState', JSON.stringify({
+            participants: participants || [],
+            hostId: hostId || null
+        }));
+    } catch (e) {
+        console.debug('Unable to cache room state', e);
+    }
+}
+
+function updateParticipantsList(participants, hostId) {
+    currentHostId = hostId ?? currentHostId;
+    console.log('👥 Updating participants list:', { participants, hostId: currentHostId, clientId });
+    if (typeof window.updateParticipantList === 'function') {
+        window.updateParticipantList(participants, currentHostId);
+    } else if (participantsListEl) {
+        participantsListEl.innerHTML = '';
+        (participants || []).forEach(p => {
+            const item = document.createElement('li');
+            let label = p.username;
+            if (p.id === currentHostId) {
+                label += ' 👑';
+                console.log(`Adding crown to ${p.username} (${p.id})`);
+            }
+            if (p.id === clientId) {
+                label += ' (You)';
+                item.classList.add('you');
+            }
+            item.textContent = label;
+            participantsListEl.appendChild(item);
+        });
+    }
+}
+
+function enableHostControls() {
+    if (typeof window.enableHostUI === 'function') {
+        window.enableHostUI();
+        return;
+    }
+    if (localAudioWrapper) localAudioWrapper.style.display = '';
+    if (remoteAudioWrapper) remoteAudioWrapper.style.display = 'none';
+    if (startBtn) {
+        startBtn.style.display = '';
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start Jam (You are Host)';
+    }
+    if (endBtn) {
+        endBtn.style.display = '';
+        endBtn.disabled = true;
+    }
+    if (exitBtn) exitBtn.style.display = 'none';
+}
+
+function enableListenerControls() {
+    if (typeof window.enableListenerUI === 'function') {
+        window.enableListenerUI();
+        return;
+    }
+    if (localAudioWrapper) localAudioWrapper.style.display = 'none';
+    if (remoteAudioWrapper) remoteAudioWrapper.style.display = '';
+    if (startBtn) {
+        startBtn.style.display = 'none';
+        startBtn.disabled = true;
+    }
+    if (endBtn) {
+        endBtn.style.display = 'none';
+        endBtn.disabled = true;
+    }
+    if (exitBtn) exitBtn.style.display = '';
+}
+
+async function handleHostStart() {
+    if (!isCurrentHost) {
+        console.log('Ignoring start request because this client is not the host.');
+        return;
+    }
+    if (isCallInProgress) {
+        console.log('Call is already in progress.');
+        return;
+    }
+    if (!startBtn) return;
+
+    try {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Acquiring audio...';
+
+        const audioConstraints = {
+            autoGainControl: false,
+            echoCancellation: false,
+            noiseSuppression: false
+        };
+
+        localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: audioConstraints });
+        localStream.getVideoTracks().forEach(track => track.stop());
+
+        if (localAudio) {
+            localAudio.srcObject = localStream;
+        }
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'start-call',
+                code: roomCode,
+                role: 'host'
+            }));
+        }
+
+        for (const participant of allParticipants) {
+            if (participant.id !== clientId) {
+                await createAndSendOfferAsNewHost(participant.id);
+            }
+        }
+
+        startBtn.textContent = 'Streaming...';
+        if (endBtn) endBtn.disabled = false;
+        isCallInProgress = true;
+        console.log('✅ Now streaming as host');
+    } catch (error) {
+        console.error('Failed to start host stream:', error);
+        alert('Failed to start audio streaming. Please check permissions and try again.');
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start Jam (You are Host)';
+    }
+}
+
+function attachHostStartHandler() {
+    if (!startBtn) return;
+    const cloned = startBtn.cloneNode(true);
+    startBtn.parentNode.replaceChild(cloned, startBtn);
+    startBtn = cloned;
+    startBtn.textContent = 'Start Jam (You are Host)';
+    startBtn.disabled = false;
+    startBtn.style.display = '';
+    startBtn.addEventListener('click', handleHostStart);
+}
+
+function attachHostEndHandler() {
+    if (!endBtn) return;
+    const cloned = endBtn.cloneNode(true);
+    endBtn.parentNode.replaceChild(cloned, endBtn);
+    endBtn = cloned;
+    endBtn.disabled = true;
+    endBtn.style.display = '';
+    endBtn.addEventListener('click', () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'end-call',
+                code: roomCode,
+                role: 'host'
+            }));
+        }
+        endCall();
+    });
+}
+
+function promoteToHost(previousHostName) {
+    if (isCurrentHost) return;
+    isCurrentHost = true;
+    currentHostId = clientId;
+    console.log('🎉 Promoted to host', previousHostName ? `after ${previousHostName} left` : '');
+    enableHostControls();
+    attachHostStartHandler();
+    attachHostEndHandler();
+    if (startBtn) startBtn.disabled = false;
+    if (endBtn) endBtn.disabled = true;
+    alert('You are now the host! Start the jam when you are ready.');
+}
+
+function demoteToListener() {
+    if (!isCurrentHost) return;
+    isCurrentHost = false;
+    enableListenerControls();
+    if (isCallInProgress) {
+        endCall();
+    }
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+}
+
+function syncHostState(hostId, participants = allParticipants) {
+    const previousHostId = currentHostId;
+    currentHostId = hostId ?? null;
+    const currentHostEntry = (participants || []).find(p => p.id === currentHostId) || null;
+    if (typeof window.setHostIdentity === 'function') {
+        window.setHostIdentity(currentHostId);
+    }
+
+    if (currentHostId === clientId) {
+        if (!isCurrentHost) {
+            const previousHostEntry = (participants || []).find(p => p.id === previousHostId);
+            promoteToHost(previousHostEntry ? previousHostEntry.username : null);
+        }
+    } else if (isCurrentHost) {
+        demoteToListener();
+        alert('You are no longer the host of this jam session.');
+    } else {
+        enableListenerControls();
+    }
+}
+
+function applyRoomSnapshot(participants, hostId) {
+    console.log('📸 Applying room snapshot:', { participants, hostId });
+    if (Array.isArray(participants)) {
+        allParticipants = participants;
+    }
+    cacheRoomState(allParticipants, hostId);
+    updateParticipantsList(allParticipants, hostId);
+    syncHostState(hostId, allParticipants);
+}
+
+enableListenerControls();
 
 const init = () => {
     ws = new WebSocket("wss://jamsesh-8wui.onrender.com");
+    window.ws = ws;
     ws.onopen = () => {
         console.log("Websocket connected");
     };
@@ -74,20 +293,12 @@ const init = () => {
         endCall();
     };
 
-    startBtn.addEventListener('click', async () => {
-        // Only allow the button to be clicked once
-        if (isCallInProgress) {
-            console.log("Call is already in progress.");
-            return;
-        }
+    if (startBtn) {
+        startBtn.addEventListener('click', handleHostStart);
+    }
 
-        // Disable the start button and enable the end button
-        startBtn.disabled = true;
-        endBtn.disabled = false;
-        isCallInProgress = true;
-    });
-
-    endBtn.addEventListener('click', () => {
+    if (endBtn) {
+        endBtn.addEventListener('click', () => {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
                 type: 'end-call',
@@ -97,6 +308,7 @@ const init = () => {
         }
         endCall();
     });
+    }
 }
 
 async function handleSignalingMessage(event) {
@@ -114,10 +326,8 @@ async function handleSignalingMessage(event) {
         }
         case 'join_success': {
             console.log(`Joiner successfully joined room ${data.code}.`);
-            allParticipants = data.participants;
-            if (typeof window.updateParticipantList === 'function') {
-                window.updateParticipantList(allParticipants);
-            }
+            console.log('Join success data:', { participants: data.participants, hostId: data.hostId, isHost: data.isHost });
+            applyRoomSnapshot(data.participants, data.hostId);
             break;
         }
 
@@ -127,9 +337,8 @@ async function handleSignalingMessage(event) {
 
             console.log(`New user ${newParticipant.username} joined.`);
             allParticipants.push(newParticipant);
-            if (typeof window.updateParticipantList === 'function') {
-                window.updateParticipantList(allParticipants);
-            }
+            updateParticipantsList(allParticipants, currentHostId);
+            cacheRoomState(allParticipants, currentHostId);
             break;
         }
 
@@ -139,9 +348,8 @@ async function handleSignalingMessage(event) {
 
             console.log(`Client ${leavingParticipant.username} left.`);
             allParticipants = allParticipants.filter(p => p.id !== leavingParticipant.id);
-            if (typeof window.updateParticipantList === 'function') {
-                window.updateParticipantList(allParticipants);
-            }
+            updateParticipantsList(allParticipants, currentHostId);
+            cacheRoomState(allParticipants, currentHostId);
             if (peerConnections[leavingParticipant.id]) {
                 peerConnections[leavingParticipant.id].close();
                 delete peerConnections[leavingParticipant.id];
@@ -151,7 +359,7 @@ async function handleSignalingMessage(event) {
 
         case 'start-call': {
             startCall = true;
-            startBtn.disabled = false;
+            if (startBtn) startBtn.disabled = false;
             return;
         }
 
@@ -176,8 +384,8 @@ async function handleSignalingMessage(event) {
                 from: clientId}));
             
             isCallInProgress = true;
-            endBtn.disabled = false; 
-            startBtn.disabled = true;
+            if (endBtn) endBtn.disabled = false; 
+            if (startBtn) startBtn.disabled = true;
             console.log("Received and answered an offer from the master.");
             break;
         }
@@ -219,146 +427,18 @@ async function handleSignalingMessage(event) {
         }
 
         case 'host-promoted': {
-            // This message is sent when the original host leaves
-            if (data.isYou) {
-                console.log('🎉 You have been promoted to host!');
-                console.log('Promotion data:', data);
-                
-                // Show notification to user that they are now the host
-                alert('You are now the host! The previous host has left the session. You can now start the jam when ready.');
-                
-                // Get fresh references to UI elements
-                const localAudioWrapper = document.querySelector('.audio-wrapper:first-child');
-                const remoteAudioWrapper = document.querySelector('.audio-wrapper:last-child');
-                const startButton = document.getElementById('startBtn');
-                const endButton = document.getElementById('endBtn');
-                const exitButton = document.getElementById('exitBtn');
-                
-                console.log('UI Elements found:', {
-                    localAudioWrapper: !!localAudioWrapper,
-                    remoteAudioWrapper: !!remoteAudioWrapper,
-                    startButton: !!startButton,
-                    endButton: !!endButton,
-                    exitButton: !!exitButton
-                });
-                
-                // Show local audio controls (previously hidden for join role)
-                if (localAudioWrapper) {
-                    localAudioWrapper.style.display = 'block';
-                    console.log('✅ Showed local audio wrapper');
-                }
-                
-                // Hide remote audio controls (now we're streaming, not receiving)
-                if (remoteAudioWrapper) {
-                    remoteAudioWrapper.style.display = 'none';
-                    console.log('✅ Hid remote audio wrapper');
-                }
-                
-                // Show and enable start button
-                if (startButton) {
-                    startButton.style.display = 'inline-block';
-                    startButton.disabled = false;
-                    startButton.textContent = 'Start Jam (You are Host)';
-                    console.log('✅ Enabled start button');
-                }
-                
-                // Show end button (disabled until start)
-                if (endButton) {
-                    endButton.style.display = 'inline-block';
-                    endButton.disabled = true;
-                    console.log('✅ Showed end button');
-                }
-                
-                // Hide exit button (hosts don't have exit, they have end)
-                if (exitButton) {
-                    exitButton.style.display = 'none';
-                    console.log('✅ Hid exit button');
-                }
-                
-                // Remove old event listener and add new one
-                if (startButton) {
-                    const newStartBtn = startButton.cloneNode(true);
-                    startButton.parentNode.replaceChild(newStartBtn, startButton);
-                    
-                    newStartBtn.addEventListener('click', async () => {
-                        if (isCallInProgress) {
-                            console.log("Call is already in progress.");
-                            return;
-                        }
-
-                        // Acquire media like the host does
-                        try {
-                            console.log('New host starting to acquire audio...');
-                            newStartBtn.disabled = true;
-                            newStartBtn.textContent = 'Acquiring audio...';
-                            
-                            const audioConstraints = {
-                                autoGainControl: false,
-                                echoCancellation: false,
-                                noiseSuppression: false
-                            };
-
-                            localStream = await navigator.mediaDevices.getDisplayMedia({ 
-                                video: true, 
-                                audio: audioConstraints 
-                            });
-                            
-                            // Stop the video track
-                            localStream.getVideoTracks().forEach(track => track.stop());
-                            console.log("✅ New host acquired local audio stream");
-                            
-                            // Play local audio
-                            const localAudio = document.getElementById('localAudio');
-                            if (localAudio) {
-                                localAudio.srcObject = localStream;
-                                console.log('✅ Set local audio srcObject');
-                            }
-                            
-                            // Notify server to start the call
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({
-                                    type: 'start-call',
-                                    code: roomCode,
-                                    role: 'host'
-                                }));
-                                console.log('✅ Sent start-call to server');
-                            }
-                            
-                            // Create offers to all other participants
-                            console.log('Creating offers to participants:', allParticipants);
-                            for (const participant of allParticipants) {
-                                if (participant.id !== clientId) {
-                                    console.log(`Creating offer for ${participant.username}`);
-                                    await createAndSendOfferAsNewHost(participant.id);
-                                }
-                            }
-                            
-                            newStartBtn.textContent = 'Streaming...';
-                            newStartBtn.disabled = true;
-                            
-                            const newEndBtn = document.getElementById('endBtn');
-                            if (newEndBtn) {
-                                newEndBtn.disabled = false;
-                                console.log('✅ Enabled end button');
-                            }
-                            
-                            isCallInProgress = true;
-                            console.log('✅ New host is now streaming to all participants!');
-                            
-                        } catch (error) {
-                            console.error("❌ New host failed to acquire media:", error);
-                            alert("Failed to start audio streaming. Please check your audio permissions and try again.");
-                            newStartBtn.disabled = false;
-                            newStartBtn.textContent = 'Start Jam (You are Host)';
-                        }
-                    });
-                    
-                    console.log('✅ Added event listener to start button');
-                }
-                
-            } else {
+            cacheRoomState(allParticipants, data.newHostId);
+            updateParticipantsList(allParticipants, data.newHostId);
+            syncHostState(data.newHostId, allParticipants);
+            if (!data.isYou) {
                 console.log(`${data.newHostUsername} is now the host.`);
             }
+            break;
+        }
+
+        case 'room-update': {
+            console.log('📢 Room update received:', { participants: data.participants, hostId: data.hostId });
+            applyRoomSnapshot(data.participants, data.hostId);
             break;
         }
 
@@ -591,8 +671,21 @@ function endCall() {
 
     if (remoteAudio) remoteAudio.srcObject = null;
     
-    startBtn.disabled = false;
-    endBtn.disabled = true;
+    if (startBtn) {
+        startBtn.disabled = isCurrentHost ? false : true;
+        if (isCurrentHost) {
+            startBtn.textContent = 'Start Jam (You are Host)';
+        }
+    }
+    if (endBtn) {
+        endBtn.disabled = true;
+    }
+
+    if (isCurrentHost) {
+        enableHostControls();
+    } else {
+        enableListenerControls();
+    }
     console.log("Call ended and resources cleaned up.");
 }
 
